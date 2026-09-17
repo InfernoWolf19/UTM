@@ -152,7 +152,22 @@ enum AlertItem: Identifiable {
         var list = virtualMachines
         for i in list.indices.reversed() {
             let vm = list[i]
-            if let registryEntry = vm.registryEntry, !fileManager.fileExists(atPath: registryEntry.package.path) {
+            guard let registryEntry = vm.registryEntry else {
+                continue
+            }
+            if !vm.isLoaded {
+                // a shortcut whose storage was disconnected may be reachable
+                // again (e.g. an external drive was plugged back in), so try to
+                // bring it back without a re-import
+                if !registryEntry.package.bookmark.isEmpty, let url = try? URL(resolvingPersistentBookmarkData: registryEntry.package.bookmark) {
+                    registryEntry.package.url = url
+                }
+                do {
+                    try vm.load()
+                } catch {
+                    logger.debug("VM '\(registryEntry.name)' is still unavailable: \(error)")
+                }
+            } else if !fileManager.fileExists(atPath: registryEntry.package.path) {
                 list[i] = VMData(from: registryEntry)
             }
         }
@@ -557,6 +572,9 @@ enum AlertItem: Identifiable {
     ///   - vm: VM to move
     ///   - url: Location to move to (must be writable)
     func move(vm: VMData, to url: URL) async throws {
+        guard vm.isModifyAllowed else {
+            throw UTMDataError.virtualMachineUnavailable
+        }
         try await export(vm: vm, to: url)
         guard let newVM = try? VMData(url: url) else {
             throw UTMDataError.shortcutCreationFailed
@@ -571,6 +589,30 @@ enum AlertItem: Identifiable {
         }
     }
     
+    /// Move the VM into a folder chosen with the document picker and create a shortcut
+    ///
+    /// The folder can be on external storage. Unlike `move(vm:to:)`, an existing
+    /// item at the destination is never replaced.
+    /// - Parameters:
+    ///   - vm: VM to move
+    ///   - directoryUrl: Folder to move into (security scoped URL from the picker)
+    func move(vm: VMData, toDirectory directoryUrl: URL) async throws {
+        let isScopedAccess = directoryUrl.startAccessingSecurityScopedResource()
+        defer {
+            if isScopedAccess {
+                directoryUrl.stopAccessingSecurityScopedResource()
+            }
+        }
+        let destUrl = directoryUrl.appendingPathComponent(vm.pathUrl.lastPathComponent, isDirectory: true)
+        guard !isSameFile(directoryUrl, as: vm.pathUrl.deletingLastPathComponent()) else {
+            throw UTMDataError.moveDestinationSame
+        }
+        guard !fileManager.fileExists(atPath: destUrl.path) else {
+            throw UTMDataError.moveDestinationExists(destUrl.lastPathComponent)
+        }
+        try await move(vm: vm, to: destUrl)
+    }
+
     /// Open settings modal
     /// - Parameter vm: VM to edit settings
     func edit(vm: VMData) {
@@ -1198,6 +1240,8 @@ enum UTMDataError: Error {
     case unsupportedBackend
     case cloneFailed
     case shortcutCreationFailed
+    case moveDestinationSame
+    case moveDestinationExists(String)
     case importFailed
     case importParseFailed
     case altServerNotFound
@@ -1222,6 +1266,10 @@ extension UTMDataError: LocalizedError {
             return NSLocalizedString("Failed to clone VM.", comment: "UTMData")
         case .shortcutCreationFailed:
             return NSLocalizedString("Unable to add a shortcut to the new location.", comment: "UTMData")
+        case .moveDestinationSame:
+            return NSLocalizedString("The virtual machine is already stored in this folder.", comment: "UTMData")
+        case .moveDestinationExists(let name):
+            return String.localizedStringWithFormat(NSLocalizedString("An item named '%@' already exists in the chosen folder. Rename or remove it first.", comment: "UTMData"), name)
         case .importFailed:
             return NSLocalizedString("Cannot import this VM. Either the configuration is invalid, created in a newer version of UTM, or on a platform that is incompatible with this version of UTM.", comment: "UTMData")
         case .importParseFailed:

@@ -82,6 +82,14 @@ struct ContentView: View {
             }
         }
         .onDrop(of: [.fileURL], delegate: self)
+        #if os(iOS)
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+            // pick up VMs on external storage that was connected while UTM was in the background
+            Task {
+                await data.listRefresh()
+            }
+        }
+        #endif
         .onAppear {
             Task {
                 await data.listRefresh()
