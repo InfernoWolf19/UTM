@@ -51,10 +51,17 @@ fileprivate struct WrappedVMDetailsView: View {
     
     var body: some View {
         VStack(alignment: .center) {
+            #if os(macOS)
             Text(isAccessible ? "This virtual machine must be re-added to UTM by opening it with Finder. You can find it at the path: \(path)"
                  : "This virtual machine cannot be found at: \(path)")
                 .lineLimit(nil)
                 .padding()
+            #else
+            Text(isAccessible ? "This virtual machine must be re-added to UTM by opening it with the Files app. You can find it at the path: \(path)"
+                 : "This virtual machine cannot be found at: \(path). If it is stored on an external drive, connect the drive and return to this list.")
+                .lineLimit(nil)
+                .padding()
+            #endif
             
             Button(role: .cancel, action: onRemove) {
                 Label("Remove", systemImage: "xmark.circle")

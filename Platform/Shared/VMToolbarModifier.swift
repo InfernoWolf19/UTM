@@ -15,6 +15,7 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 // Lots of dirty hacks to work around SwiftUI bugs introduced in Beta 2
 struct VMToolbarModifier: ViewModifier {
@@ -24,6 +25,9 @@ struct VMToolbarModifier: ViewModifier {
     @State private var confirmAction: ConfirmAction?
     @EnvironmentObject private var data: UTMData
     @State private var shareItem: VMShareItemModifier.ShareItem?
+    #if os(iOS)
+    @State private var showMoveFolderPicker = false
+    #endif
     
     #if os(macOS)
     let buttonPlacement: ToolbarItemPlacement = .automatic
@@ -88,7 +92,7 @@ struct VMToolbarModifier: ViewModifier {
                     Spacer()
                 }
                 #endif
-                #if os(macOS)
+                #if os(macOS) || os(iOS)
                 if !vm.isShortcut {
                     Button {
                         confirmAction = .confirmMoveVM(vm: vm)
@@ -98,6 +102,11 @@ struct VMToolbarModifier: ViewModifier {
                     }.help("Move selected VM")
                     .disabled(!vm.isModifyAllowed)
                     .padding(.leading, padding)
+                    #if os(iOS)
+                    if bottom {
+                        Spacer()
+                    }
+                    #endif
                 }
                 #endif
                 Button {
@@ -152,10 +161,22 @@ struct VMToolbarModifier: ViewModifier {
         .modifier(VMShareItemModifier(isPresented: $showSharePopup, shareItem: shareItem))
         .modifier(VMConfirmActionModifier(confirmAction: $confirmAction) { action in
             if case .confirmMoveVM(let vm) = action {
+                #if os(iOS)
+                showMoveFolderPicker = true
+                #else
                 shareItem = .utmMove(vm)
                 showSharePopup.toggle()
+                #endif
             }
         })
+        #if os(iOS)
+        .fileImporter(isPresented: $showMoveFolderPicker, allowedContentTypes: [.folder]) { result in
+            data.busyWorkAsync {
+                let directoryUrl = try result.get()
+                try await data.move(vm: vm, toDirectory: directoryUrl)
+            }
+        }
+        #endif
     }
 }
 

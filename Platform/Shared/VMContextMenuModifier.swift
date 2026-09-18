@@ -15,6 +15,7 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct VMContextMenuModifier: ViewModifier {
     @ObservedObject var vm: VMData
@@ -22,6 +23,9 @@ struct VMContextMenuModifier: ViewModifier {
     @State private var showSharePopup = false
     @State private var confirmAction: ConfirmAction?
     @State private var shareItem: VMShareItemModifier.ShareItem?
+    #if os(iOS)
+    @State private var showMoveFolderPicker = false
+    #endif
     
     func body(content: Content) -> some View {
         bodyFull(content: content)
@@ -107,7 +111,7 @@ struct VMContextMenuModifier: ViewModifier {
             } label: {
                 Label("Share…", systemImage: "square.and.arrow.up")
             }.help("Share a copy of this VM and all its data.")
-            #if os(macOS)
+            #if os(macOS) || os(iOS)
             if !vm.isShortcut {
                 Button {
                     confirmAction = .confirmMoveVM(vm: vm)
@@ -150,9 +154,21 @@ struct VMContextMenuModifier: ViewModifier {
         .modifier(VMShareItemModifier(isPresented: $showSharePopup, shareItem: shareItem))
         .modifier(VMConfirmActionModifier(confirmAction: $confirmAction) { action in
             if case .confirmMoveVM(let vm) = action {
+                #if os(iOS)
+                showMoveFolderPicker = true
+                #else
                 shareItem = .utmMove(vm)
                 showSharePopup.toggle()
+                #endif
             }
         })
+        #if os(iOS)
+        .fileImporter(isPresented: $showMoveFolderPicker, allowedContentTypes: [.folder]) { result in
+            data.busyWorkAsync {
+                let directoryUrl = try result.get()
+                try await data.move(vm: vm, toDirectory: directoryUrl)
+            }
+        }
+        #endif
     }
 }
