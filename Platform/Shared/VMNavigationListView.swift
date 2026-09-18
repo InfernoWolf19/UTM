@@ -185,11 +185,6 @@ private struct VMListModifier: ViewModifier {
             }
             #endif
             #if !WITH_REMOTE
-            #if os(iOS) // ToolbarSpacer is unavailable on visionOS
-            if #available(iOS 26, *) {
-                ToolbarSpacer(.fixed, placement: .navigationBarLeading)
-            }
-            #endif
             ToolbarItem(placement: .navigationBarLeading) {
                 if #available(iOS 17, visionOS 99, *) {
                     Button {
@@ -224,6 +219,9 @@ private struct VMListModifier: ViewModifier {
             }
             #endif
         }
+        #if !WITH_REMOTE
+        .modifier(VMToolbarLeadingSpacerModifier())
+        #endif
         #if os(iOS)
         // SwiftUI bug on iOS 14.4 and previous versions prevents multiple .sheet from working
         .sheet(isPresented: $sheetPresented) {
@@ -289,5 +287,29 @@ private struct VMListModifier: ViewModifier {
         Button(action: { data.newVM() }, label: {
             Label("New VM", systemImage: "plus").labelStyle(.iconOnly)
         }).help("Create a new VM")
+    }
+}
+
+/// `ToolbarSpacer` is unavailable before iOS 26. A bare `if #available` (with
+/// or without an else) directly inside a `.toolbar { }` closure resolves
+/// through `ToolbarContentBuilder.buildIf`/`buildEither`, both of which
+/// themselves require iOS 16, even though nothing here declares iOS 16
+/// availability. Applying it as a separate modifier instead means the
+/// runtime check is resolved by `ViewBuilder` (available since iOS 13, no
+/// such restriction) before `ToolbarSpacer` ever reaches
+/// `ToolbarContentBuilder`.
+private struct VMToolbarLeadingSpacerModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        #if os(iOS) // ToolbarSpacer is unavailable on visionOS
+        if #available(iOS 26, *) {
+            content.toolbar {
+                ToolbarSpacer(.fixed, placement: .navigationBarLeading)
+            }
+        } else {
+            content
+        }
+        #else
+        content
+        #endif
     }
 }
