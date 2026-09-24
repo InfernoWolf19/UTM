@@ -81,7 +81,7 @@ jobs:
         run: |
           brew uninstall cmake || true
           brew install bison pkg-config gettext glib-utils libgpg-error nasm make meson cmake
-          brew install llvm spirv-llvm-translator spirv-tools libclc libxcb libxrandr
+          brew install llvm spirv-llvm-translator libxcb libxrandr
           pip3 install --break-system-packages --user six pyparsing pyyaml setuptools distlib mako
           gem install --user-install xcpretty
           rm -f /usr/local/lib/pkgconfig/*.pc
@@ -89,6 +89,7 @@ jobs:
         if: steps.cache-sysroot.outputs.cache-matched-key == '' || github.event.inputs.rebuild_sysroot == 'true'
         run: ./scripts/build_dependencies.sh -p ${{ matrix.platform }} -a ${{ matrix.arch }}
         env:
+          SKIP_KOSMICKRISP: 1
           NCPU: ${{ endsWith(matrix.platform, '-tci') && '1' || '0' }} # limit 1 CPU for TCI build due to memory issues, 0 = unlimited for other builds
       - name: Compress Sysroot
         if: steps.cache-sysroot.outputs.cache-matched-key == '' || github.event_name == 'release' || github.event.inputs.test_release == 'true' || github.event.inputs.rebuild_sysroot == 'true'

@@ -873,10 +873,18 @@ build_mesa_host () {
 
 build_vulkan_drivers () {
     mkdir -p "$PREFIX/share/vulkan/icd.d"
-    build_mesa_host
-    meson_darwin_build $MESA_REPO -Dmesa-clc=system -Dgallium-drivers= -Dvulkan-drivers=kosmickrisp -Dplatforms=macos
-    patch_vulkan_icd "$PREFIX/share/vulkan/icd.d/kosmickrisp_mesa_icd.$ARCH.json"
-    mv "$PREFIX/share/vulkan/icd.d/kosmickrisp_mesa_icd.$ARCH.json" "$PREFIX/share/vulkan/icd.d/kosmickrisp_mesa_icd.json"
+    if [ -n "$SKIP_KOSMICKRISP" ]; then
+        # Mesa's host build needs a libclc that ships libclc.pc and the
+        # spirv*-mesa3d- targets, which current Homebrew no longer provides.
+        # Leave an empty library so the app still finds what it embeds;
+        # MoltenVK remains the Vulkan driver.
+        $CC -dynamiclib -x c /dev/null -o "$PREFIX/lib/libvulkan_kosmickrisp.dylib"
+    else
+        build_mesa_host
+        meson_darwin_build $MESA_REPO -Dmesa-clc=system -Dgallium-drivers= -Dvulkan-drivers=kosmickrisp -Dplatforms=macos
+        patch_vulkan_icd "$PREFIX/share/vulkan/icd.d/kosmickrisp_mesa_icd.$ARCH.json"
+        mv "$PREFIX/share/vulkan/icd.d/kosmickrisp_mesa_icd.$ARCH.json" "$PREFIX/share/vulkan/icd.d/kosmickrisp_mesa_icd.json"
+    fi
     build_moltenvk
     patch_vulkan_icd "$PREFIX/share/vulkan/icd.d/MoltenVK_icd.json"
 }
