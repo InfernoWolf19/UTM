@@ -80,6 +80,32 @@
 			<key>Type</key>
 			<string>PSGroupSpecifier</string>
 			<key>Title</key>
+			<string>Storage</string>
+			<key>FooterText</key>
+			<string>Turn off drive image locking only if a virtual machine stored on an external drive fails to start with a "Failed to get lock" error.</string>
+			<key>ExcludeTargets</key>
+			<array>
+				<string>iOS-Remote</string>
+			</array>
+		</dict>
+		<dict>
+			<key>Type</key>
+			<string>PSToggleSwitchSpecifier</string>
+			<key>Title</key>
+			<string>Lock drive images when in use</string>
+			<key>Key</key>
+			<string>UseFileLock</string>
+			<key>DefaultValue</key>
+			<true/>
+			<key>ExcludeTargets</key>
+			<array>
+				<string>iOS-Remote</string>
+			</array>
+		</dict>
+		<dict>
+			<key>Type</key>
+			<string>PSGroupSpecifier</string>
+			<key>Title</key>
 			<string>Devices</string>
 		</dict>
 		<dict>

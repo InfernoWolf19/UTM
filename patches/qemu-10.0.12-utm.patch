@@ -462,90 +462,6 @@ index 82d758ae08..d73fbf5271 100644
 -- 
 2.41.0
 
-From 27d8515de35937969dec6144dc6a0b63362d5ecc Mon Sep 17 00:00:00 2001
-From: osy <osy@turing.llc>
-Date: Wed, 29 Jul 2026 16:20:12 -0700
-Subject: [PATCH 4/4] Revert "ui/console: force gl-unblock from the watchdog
- timer"
-
-This reverts commit 5cb1434ba33797b08f94c0f2168cd5ee7f70d8e6.
----
- ui/console.c | 45 ++-------------------------------------------
- 1 file changed, 2 insertions(+), 43 deletions(-)
-
-diff --git a/ui/console.c b/ui/console.c
-index a2dddbd37a..f6d7879eff 100644
---- a/ui/console.c
-+++ b/ui/console.c
-@@ -166,32 +166,7 @@ void qemu_console_co_wait_update(QemuConsole *con)
- 
- static void graphic_hw_gl_unblock_timer(void *opaque)
- {
--    QemuConsole *con = opaque;
--
--    /*
--     * The display's GL render did not release the block within the timeout
--     * (e.g. the gtk window is occluded, the host compositor throttled the
--     * frame callback, or the host GPU stalled). The device's command queue is
--     * gated on this block (virtio-gpu: renderer_blocked), so a stuck display
--     * stalls the guest GPU scheduler into a TDR (dxgmms1 0x7E) ~2 s later.
--     * Force the unblock so guest command/fence processing resumes well before
--     * the guest's TdrDelay; the worst case is one stale/torn displayed frame,
--     * never a guest crash. A late real release is absorbed in
--     * graphic_hw_gl_block() (con->gl_block already 0 -> no-op).
--     */
--    /* Rate-limited: this can fire repeatedly when the display fence is
--     * persistently slow; an occasional line is enough to know it's active. */
--    static unsigned _ub;
--    if ((_ub++ % 60u) == 0u) {
--        warn_report("console: gl-unblock fallback firing (display GL fence slow); "
--                    "forcing unblock to keep the guest cmdq moving");
--    }
--    if (con->gl_block > 0) {
--        con->gl_block = 0;
--        if (con->hw_ops->gl_block) {
--            con->hw_ops->gl_block(con->hw, false);
--        }
--    }
-+    warn_report("console: no gl-unblock within one second");
- }
- 
- void graphic_hw_gl_block(QemuConsole *con, bool block)
-@@ -202,13 +177,6 @@ void graphic_hw_gl_block(QemuConsole *con, bool block)
-     if (block) {
-         con->gl_block++;
-     } else {
--        /*
--         * A late release after graphic_hw_gl_unblock_timer() force-cleared the
--         * block (con->gl_block already 0) must be a safe no-op, not underflow.
--         */
--        if (con->gl_block == 0) {
--            return;
--        }
-         con->gl_block--;
-     }
-     assert(con->gl_block >= 0);
-@@ -222,16 +190,7 @@ void graphic_hw_gl_block(QemuConsole *con, bool block)
- 
-     if (block) {
-         timeout = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
--        /* Safety net only.  The display samples (blits + fences) the guest
--         * buffer directly at flush time, so the block lifetime is the GPU
--         * fence latency -- not the host compositor's frame clock -- and
--         * releasing the guest early TEARS: it re-renders into the buffer
--         * while the queued blit still reads it (scaled/shifted frame
--         * artifacts under present storms).  500ms is correct backpressure
--         * for a slow (shared, possibly saturated) GPU while still
--         * recovering a genuinely stuck fence well inside the guest's ~2s
--         * TDR budget. */
--        timeout += 500;
-+        timeout += 1000; /* one sec */
-         timer_mod(con->gl_unblock_timer, timeout);
-     } else {
-         timer_del(con->gl_unblock_timer);
--- 
-2.41.0
-
 From 7311c3651c3a2cbc3d32e6eae262c60339f28d79 Mon Sep 17 00:00:00 2001
 From: osy <osy@turing.llc>
 Date: Sun, 2 Aug 2026 21:04:16 -0700
@@ -2832,4 +2748,59 @@ index c4323574e1..fba1a56ceb 100644
      /*
 -- 
 2.54.0 (Apple Git-157)
+
+
+From a8cc5b465aa564a78e4c90e3d0d42d199a099033 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 24 Sep 2026 21:26:03 +0000
+Subject: [PATCH] virtio-gpu: initialise the deferred flag on every control
+ command
+
+The command queue now tells deferred and suspended commands apart, but
+only virtio_gpu_handle_ctrl() cleared cmd->deferred. The GL and
+rutabaga paths left it holding whatever the heap last put there, since
+virtqueue_pop() does not zero the element (rutabaga never cleared
+suspended either).
+
+When that stale byte reads as set in virtio_gpu_virgl_process_cmd() but
+not as the exact value virtio_gpu_process_cmdq() compares against, a
+RESOURCE_FLUSH is executed but never answered and never dequeued: it
+blocks the renderer, is replayed as soon as the display acknowledges
+the draw, and blocks it again, forever. The guest keeps running while
+its display driver waits on a flush that never completes, so the
+screen freezes and no driver reset brings it back.
+
+Assisted-by: Claude:claude-opus-5-5
+---
+ hw/display/virtio-gpu-gl.c       | 1 +
+ hw/display/virtio-gpu-rutabaga.c | 2 ++
+ 2 files changed, 3 insertions(+)
+
+diff --git a/hw/display/virtio-gpu-gl.c b/hw/display/virtio-gpu-gl.c
+index 9f104afa6..29dab4fb7 100644
+--- a/hw/display/virtio-gpu-gl.c
++++ b/hw/display/virtio-gpu-gl.c
+@@ -94,6 +94,7 @@ static void virtio_gpu_gl_handle_ctrl(VirtIODevice *vdev, VirtQueue *vq)
+         cmd->error = 0;
+         cmd->finished = false;
+         cmd->suspended = false;
++        cmd->deferred = false;
+         QTAILQ_INSERT_TAIL(&g->cmdq, cmd, next);
+         cmd = virtqueue_pop(vq, sizeof(struct virtio_gpu_ctrl_command));
+     }
+diff --git a/hw/display/virtio-gpu-rutabaga.c b/hw/display/virtio-gpu-rutabaga.c
+index a61454aeb..8ebbe240f 100644
+--- a/hw/display/virtio-gpu-rutabaga.c
++++ b/hw/display/virtio-gpu-rutabaga.c
+@@ -1069,6 +1069,8 @@ static void virtio_gpu_rutabaga_handle_ctrl(VirtIODevice *vdev, VirtQueue *vq)
+         cmd->vq = vq;
+         cmd->error = 0;
+         cmd->finished = false;
++        cmd->suspended = false;
++        cmd->deferred = false;
+         QTAILQ_INSERT_TAIL(&g->cmdq, cmd, next);
+         cmd = virtqueue_pop(vq, sizeof(struct virtio_gpu_ctrl_command));
+     }
+-- 
+2.43.0
 

@@ -28,6 +28,11 @@ extension UTMData {
         guard let wrapped = vm.wrapped else {
             return
         }
+        // a shortcut on external storage is unusable while the drive is unplugged
+        if vm.isShortcut && !FileManager.default.fileExists(atPath: vm.pathUrl.path) {
+            showErrorAlert(message: NSLocalizedString("The storage containing this virtual machine is not available. If it is on an external drive, connect the drive and try again.", comment: "UTMDataExtension"))
+            return
+        }
         if let session = VMSessionState.allActiveSessions.values.first(where: { $0.vm.id == wrapped.id }) {
             session.showWindow()
         } else if vm.isStopped || vm.isTakeoverAllowed {

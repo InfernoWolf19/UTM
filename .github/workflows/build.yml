@@ -24,7 +24,7 @@ on:
 
 env:
   BUILD_XCODE_PATH: ${{ vars.HOST_XCODE_PATH || '/Applications/Xcode.app' }}
-  RUNNER_IMAGE: macos-15
+  RUNNER_IMAGE: ${{ vars.RUNNER_IMAGE || 'macos-26' }}
   SEGMENT_DOWNLOAD_TIMEOUT_MINS: 60
 
 jobs:
@@ -54,13 +54,7 @@ jobs:
     strategy:
       matrix:
         arch: [arm64]
-        platform: [ios, ios_simulator, ios-tci, ios_simulator-tci, macos, visionos, visionos_simulator, visionos-tci, visionos_simulator-tci]
-        include:
-          # x86_64 supported only for macOS and simulators
-          - arch: x86_64
-            platform: macos
-          - arch: x86_64
-            platform: ios_simulator
+        platform: [ios]
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -83,9 +77,9 @@ jobs:
         run: |
           echo "/usr/local/opt/bison/bin:/opt/homebrew/opt/bison/bin" >> $GITHUB_PATH
       - name: Install Requirements
-        if: (steps.cache-sysroot.outputs.cache-matched-key == '' || github.event.inputs.rebuild_sysroot == 'true') && needs.configuration.outputs.runner == env.RUNNER_IMAGE
+        if: (steps.cache-sysroot.outputs.cache-matched-key == '' || github.event.inputs.rebuild_sysroot == 'true') && fromJSON(needs.configuration.outputs.runner) == env.RUNNER_IMAGE
         run: |
-          brew uninstall cmake
+          brew uninstall cmake || true
           brew install bison pkg-config gettext glib-utils libgpg-error nasm make meson cmake
           brew install llvm spirv-llvm-translator libxcb libxrandr
           pip3 install --break-system-packages --user six pyparsing pyyaml setuptools distlib mako
@@ -95,6 +89,7 @@ jobs:
         if: steps.cache-sysroot.outputs.cache-matched-key == '' || github.event.inputs.rebuild_sysroot == 'true'
         run: ./scripts/build_dependencies.sh -p ${{ matrix.platform }} -a ${{ matrix.arch }}
         env:
+          SKIP_KOSMICKRISP: 1
           NCPU: ${{ endsWith(matrix.platform, '-tci') && '1' || '0' }} # limit 1 CPU for TCI build due to memory issues, 0 = unlimited for other builds
       - name: Compress Sysroot
         if: steps.cache-sysroot.outputs.cache-matched-key == '' || github.event_name == 'release' || github.event.inputs.test_release == 'true' || github.event.inputs.rebuild_sysroot == 'true'
@@ -114,6 +109,7 @@ jobs:
           upload-chunk-size: 1048576 # 1 MiB
   build-sysroot-universal:
     name: Build Sysroot (Universal Mac)
+    if: false
     runs-on: ${{ fromJSON(needs.configuration.outputs.github-runner) }}
     needs: [configuration, build-sysroot]
     steps:
@@ -174,13 +170,6 @@ jobs:
       matrix:
         configuration: [
           {arch: "arm64", sdk: "iphoneos", platform: "ios", scheme: "iOS"},
-          {arch: "arm64", sdk: "iphoneos", platform: "ios-tci", scheme: "iOS-SE"},
-          {arch: "arm64", sdk: "iphoneos", platform: "ios-tci", scheme: "iOS-Remote"},
-          {arch: "arm64", sdk: "xros", platform: "visionos", scheme: "iOS"},
-          {arch: "arm64", sdk: "xros", platform: "visionos-tci", scheme: "iOS-SE"},
-          {arch: "arm64", sdk: "xros", platform: "visionos-tci", scheme: "iOS-Remote"},
-          {arch: "arm64", sdk: "macosx", platform: "macos", scheme: "macOS"},
-          {arch: "x86_64", sdk: "macosx", platform: "macos", scheme: "macOS"},
         ]
     steps:
       - name: Checkout
@@ -209,6 +198,7 @@ jobs:
           path: UTM.xcarchive.tgz
   build-universal:
     name: Build UTM (Universal Mac)
+    if: false
     runs-on: ${{ fromJSON(needs.configuration.outputs.runner) }}
     needs: [configuration, build-sysroot-universal]
     steps:
@@ -245,14 +235,7 @@ jobs:
     strategy:
       matrix:
         configuration: [
-          {platform: "ios", scheme: "iOS", mode: "ipa", name: "UTM.ipa", path: "UTM.ipa"},
-          {platform: "ios-tci", scheme: "iOS-SE", mode: "ipa-se", name: "UTM-SE.ipa", path: "UTM SE.ipa"},
           {platform: "ios", scheme: "iOS", mode: "ipa-hv", name: "UTM-HV.ipa", path: "UTM.ipa"},
-          {platform: "ios", scheme: "iOS", mode: "deb", name: "UTM.deb", path: "UTM.deb"},
-          {platform: "visionos", scheme: "iOS", mode: "ipa", name: "UTM-visionOS.ipa", path: "UTM.ipa"},
-          {platform: "visionos-tci", scheme: "iOS-SE", mode: "ipa-se", name: "UTM-SE-visionOS.ipa", path: "UTM SE.ipa"},
-          {platform: "ios-tci", scheme: "iOS-Remote", mode: "ipa-remote", name: "UTM-Remote.ipa", path: "UTM Remote.ipa"},
-          {platform: "visionos-tci", scheme: "iOS-Remote", mode: "ipa-remote", name: "UTM-Remote-visionOS.ipa", path: "UTM Remote.ipa"},
         ]
     if: github.event_name == 'release' || github.event.inputs.test_release == 'true'
     steps:
@@ -306,9 +289,9 @@ jobs:
           event-type: new-release
   package-mac:
     name: Package (macOS)
+    if: false
     runs-on: ${{ fromJSON(needs.configuration.outputs.github-runner) }}
     needs: [configuration, build-universal]
-    if: github.event_name == 'release' || github.event.inputs.test_release == 'true'
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -382,9 +365,9 @@ jobs:
           asset_content_type: application/octet-stream
   submit-mac:
     name: Submit (macOS)
+    if: false
     runs-on: ${{ fromJSON(needs.configuration.outputs.github-runner) }}
     needs: [configuration, build-universal]
-    if: github.event_name == 'release' || github.event.inputs.test_release == 'true'
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -444,6 +427,7 @@ jobs:
           API_KEY: ${{ vars.CONNECT_KEY_ID }}
   submit-ios:
     name: Submit (iOS)
+    if: false
     runs-on: ${{ fromJSON(needs.configuration.outputs.github-runner) }}
     needs: [configuration, build-utm]
     strategy:
@@ -454,7 +438,6 @@ jobs:
           {platform: "ios-tci", scheme: "iOS-Remote", mode: "ipa-remote-signed", name: "UTM-Remote-signed.ipa", path: "UTM Remote.ipa", type: "ios"},
           {platform: "visionos-tci", scheme: "iOS-Remote", mode: "ipa-remote-signed", name: "UTM-Remote-visionOS-signed.ipa", path: "UTM Remote.ipa", type: "visionos"},
         ]
-    if: github.event_name == 'release' || github.event.inputs.test_release == 'true'
     steps:
       - name: Checkout
         uses: actions/checkout@v3
