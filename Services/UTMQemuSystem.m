@@ -249,17 +249,14 @@ static int startQemu(UTMProcess *process, int argc, const char *argv[], const ch
         self.entry = startQemu;
         self.architecture = architecture;
         self.mutableEnvironment = [NSMutableDictionary dictionary];
-        /* The render server proxy signals fence retirement over an eventfd on
-         * Linux and, since the Darwin pipe fallback, over a pipe everywhere
-         * else, which is what enables edge triggered async fence delivery.
-         * Before that fallback, Darwin hosts discovered retirement from QEMU's
-         * poll timer instead. A missed edge on the pipe leaves the display
-         * waiting on a fence that has already retired while the guest keeps
-         * running, so keep the poll path reachable:
-         *   defaults write com.utmapp.UTM DisableAsyncFence -bool YES
+        /* Async fencing on the render server path changed how every
+         * virtio-gpu fence is completed. SyncFenceRetirement has QEMU keep
+         * the synchronous callbacks and the 1 ms fence poll instead, so the
+         * two can be compared on the same build; the debug log then reports
+         * "async fence delivery disabled".
          */
-        if ([NSUserDefaults.standardUserDefaults boolForKey:@"DisableAsyncFence"]) {
-            self.mutableEnvironment[@"VIRGL_DISABLE_MT"] = @"1";
+        if ([NSUserDefaults.standardUserDefaults boolForKey:@"SyncFenceRetirement"]) {
+            self.mutableEnvironment[@"UTM_VIRGL_SYNC_FENCE"] = @"1";
         }
     }
     return self;

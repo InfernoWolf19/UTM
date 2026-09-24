@@ -227,9 +227,9 @@
 			<key>Type</key>
 			<string>PSToggleSwitchSpecifier</string>
 			<key>Title</key>
-			<string>Disable Async Fence</string>
+			<string>Synchronous Fences</string>
 			<key>Key</key>
-			<string>DisableAsyncFence</string>
+			<string>SyncFenceRetirement</string>
 			<key>DefaultValue</key>
 			<false/>
 			<key>ExcludeTargets</key>
