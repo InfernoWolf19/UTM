@@ -249,15 +249,6 @@ static int startQemu(UTMProcess *process, int argc, const char *argv[], const ch
         self.entry = startQemu;
         self.architecture = architecture;
         self.mutableEnvironment = [NSMutableDictionary dictionary];
-        /* Async fencing on the render server path changed how every
-         * virtio-gpu fence is completed. SyncFenceRetirement has QEMU keep
-         * the synchronous callbacks and the 1 ms fence poll instead, so the
-         * two can be compared on the same build; the debug log then reports
-         * "async fence delivery disabled".
-         */
-        if ([NSUserDefaults.standardUserDefaults boolForKey:@"SyncFenceRetirement"]) {
-            self.mutableEnvironment[@"UTM_VIRGL_SYNC_FENCE"] = @"1";
-        }
     }
     return self;
 }

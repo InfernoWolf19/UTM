@@ -225,20 +225,6 @@
 		</dict>
 		<dict>
 			<key>Type</key>
-			<string>PSToggleSwitchSpecifier</string>
-			<key>Title</key>
-			<string>Synchronous Fences</string>
-			<key>Key</key>
-			<string>SyncFenceRetirement</string>
-			<key>DefaultValue</key>
-			<false/>
-			<key>ExcludeTargets</key>
-			<array>
-				<string>iOS-Remote</string>
-			</array>
-		</dict>
-		<dict>
-			<key>Type</key>
 			<string>PSMultiValueSpecifier</string>
 			<key>Title</key>
 			<string>FPS Limit</string>
