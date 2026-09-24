@@ -2749,3 +2749,58 @@ index c4323574e1..fba1a56ceb 100644
 -- 
 2.54.0 (Apple Git-157)
 
+
+From a8cc5b465aa564a78e4c90e3d0d42d199a099033 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 24 Sep 2026 21:26:03 +0000
+Subject: [PATCH] virtio-gpu: initialise the deferred flag on every control
+ command
+
+The command queue now tells deferred and suspended commands apart, but
+only virtio_gpu_handle_ctrl() cleared cmd->deferred. The GL and
+rutabaga paths left it holding whatever the heap last put there, since
+virtqueue_pop() does not zero the element (rutabaga never cleared
+suspended either).
+
+When that stale byte reads as set in virtio_gpu_virgl_process_cmd() but
+not as the exact value virtio_gpu_process_cmdq() compares against, a
+RESOURCE_FLUSH is executed but never answered and never dequeued: it
+blocks the renderer, is replayed as soon as the display acknowledges
+the draw, and blocks it again, forever. The guest keeps running while
+its display driver waits on a flush that never completes, so the
+screen freezes and no driver reset brings it back.
+
+Assisted-by: Claude:claude-opus-5-5
+---
+ hw/display/virtio-gpu-gl.c       | 1 +
+ hw/display/virtio-gpu-rutabaga.c | 2 ++
+ 2 files changed, 3 insertions(+)
+
+diff --git a/hw/display/virtio-gpu-gl.c b/hw/display/virtio-gpu-gl.c
+index 9f104afa6..29dab4fb7 100644
+--- a/hw/display/virtio-gpu-gl.c
++++ b/hw/display/virtio-gpu-gl.c
+@@ -94,6 +94,7 @@ static void virtio_gpu_gl_handle_ctrl(VirtIODevice *vdev, VirtQueue *vq)
+         cmd->error = 0;
+         cmd->finished = false;
+         cmd->suspended = false;
++        cmd->deferred = false;
+         QTAILQ_INSERT_TAIL(&g->cmdq, cmd, next);
+         cmd = virtqueue_pop(vq, sizeof(struct virtio_gpu_ctrl_command));
+     }
+diff --git a/hw/display/virtio-gpu-rutabaga.c b/hw/display/virtio-gpu-rutabaga.c
+index a61454aeb..8ebbe240f 100644
+--- a/hw/display/virtio-gpu-rutabaga.c
++++ b/hw/display/virtio-gpu-rutabaga.c
+@@ -1069,6 +1069,8 @@ static void virtio_gpu_rutabaga_handle_ctrl(VirtIODevice *vdev, VirtQueue *vq)
+         cmd->vq = vq;
+         cmd->error = 0;
+         cmd->finished = false;
++        cmd->suspended = false;
++        cmd->deferred = false;
+         QTAILQ_INSERT_TAIL(&g->cmdq, cmd, next);
+         cmd = virtqueue_pop(vq, sizeof(struct virtio_gpu_ctrl_command));
+     }
+-- 
+2.43.0
+
